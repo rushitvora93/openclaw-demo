@@ -39,7 +39,7 @@ Click **Settings** in the sidebar to configure:
 
 Settings are persisted in `localStorage`.
 
-## How it works
+## How It Works
 
 ### WebSocket Protocol
 
@@ -55,9 +55,9 @@ OpenClaw uses a JSON-based RPC protocol over WebSocket with three message types:
 
 ```
 Client ──── WebSocket connect ────► Server
-       ◄─── event: connect.challenge ─ (nonce + timestamp)
-       ──── req: connect ────────────► (device identity + signed nonce + token)
-       ◄─── event: hello-ok ─────────  (presence, health, stateVersion)
+       ◄─── event: connect.challenge  (nonce + timestamp)
+       ────► req: connect              (device identity + signed nonce + token)
+       ◄─── event: hello-ok           (presence, health, stateVersion)
 ```
 
 For **localhost** connections without a token, OpenClaw auto-approves the device.
@@ -67,11 +67,11 @@ For **localhost** connections without a token, OpenClaw auto-approves the device
 Responses stream as `agent` events with `delta` chunks:
 
 ```
-Client ── req: agent.run ──────────► Server
-       ◄─ res: { ok, status:"accepted" }
-       ◄─ event: agent { delta:"Hello" }
-       ◄─ event: agent { delta:" there" }
-       ◄─ event: agent { status:"ok", content:"Hello there" }
+Client ──► req: agent.run ────────► Server
+       ◄── res: { ok, status:"accepted" }
+       ◄── event: agent { delta:"Hello" }
+       ◄── event: agent { delta:" there" }
+       ◄── event: agent { status:"ok", content:"Hello there" }
 ```
 
 ## Project Structure
@@ -88,3 +88,14 @@ src/app/
         ├── chat.component.html # Template
         └── chat.component.scss # Styles
 ```
+
+## Tech Stack
+
+- **Angular 19** with standalone components
+- **RxJS** for reactive WebSocket handling
+- **TypeScript** with strict typing
+- **SCSS** for styling
+
+## License
+
+MIT
