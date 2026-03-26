@@ -1,0 +1,139 @@
+<div class="shell">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-icon">🦞</span>
+      <span class="brand-name">OpenClaw</span>
+    </div>
+
+    <!-- Status -->
+    <div class="status-block">
+      <span class="status-dot" [class]="statusClass"></span>
+      <span class="status-label">{{ statusLabel }}</span>
+    </div>
+
+    <!-- Connect / Disconnect -->
+    <div class="sidebar-actions">
+      @if (status === 'disconnected' || status === 'error') {
+        <button class="btn btn-primary" (click)="connect()">Connect</button>
+      } @else if (status === 'connecting' || status === 'authenticating') {
+        <button class="btn btn-disabled" disabled>Connecting…</button>
+      } @else {
+        <button class="btn btn-ghost" (click)="disconnect()">Disconnect</button>
+      }
+
+      <button class="btn btn-ghost" (click)="checkHealth()" [disabled]="!isConnected">
+        Health Check
+      </button>
+
+      <button class="btn btn-ghost" (click)="clearChat()">Clear Chat</button>
+
+      <button class="btn btn-ghost" (click)="showSettings = !showSettings">
+        Settings
+      </button>
+    </div>
+
+    <!-- Error -->
+    @if (error) {
+      <div class="error-banner">{{ error }}</div>
+    }
+
+    <!-- Health Info -->
+    @if (healthInfo) {
+      <div class="health-panel">
+        <p class="panel-label">Gateway Health</p>
+        <pre>{{ healthInfo | json }}</pre>
+      </div>
+    }
+
+    <!-- Gateway URL hint -->
+    <div class="sidebar-footer">
+      <p class="hint">Gateway: {{ settings.gatewayUrl }}</p>
+      <p class="hint">Run <code>openclaw gateway</code> to start.</p>
+    </div>
+  </aside>
+
+  <!-- ── Main ─────────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Settings Panel -->
+    @if (showSettings) {
+      <div class="settings-overlay" (click)="showSettings = false"></div>
+      <div class="settings-panel">
+        <h2 class="settings-title">Settings</h2>
+
+        <label class="field">
+          <span>Gateway URL</span>
+          <input [(ngModel)]="settings.gatewayUrl" placeholder="ws://127.0.0.1:18789" />
+        </label>
+
+        <label class="field">
+          <span>Auth Token <em>(optional for localhost)</em></span>
+          <input [(ngModel)]="settings.token" type="password"
+                 placeholder="OPENCLAW_GATEWAY_TOKEN" />
+        </label>
+
+        <label class="field">
+          <span>Device Name</span>
+          <input [(ngModel)]="settings.deviceName" placeholder="Angular Integration" />
+        </label>
+
+        <div class="settings-actions">
+          <button class="btn btn-primary" (click)="saveSettings()">Save</button>
+          <button class="btn btn-ghost" (click)="showSettings = false">Cancel</button>
+        </div>
+      </div>
+    }
+
+    <!-- Message List -->
+    <div class="message-list" #messageList>
+      @if (messages.length === 0) {
+        <div class="empty-state">
+          <p class="empty-icon">🦞</p>
+          <p>Connect to your OpenClaw Gateway and start chatting.</p>
+          @if (status !== 'connected') {
+            <p class="hint">Click <strong>Connect</strong> in the sidebar.</p>
+          }
+        </div>
+      }
+
+      @for (msg of messages; track trackById($index, msg)) {
+        <div class="message" [class]="'message--' + msg.role">
+          <div class="bubble" [class.bubble--streaming]="msg.status === 'streaming'"
+                              [class.bubble--error]="msg.status === 'error'">
+            @if (msg.content) {
+              <p class="bubble-text">{{ msg.content }}</p>
+            } @else if (msg.status === 'streaming') {
+              <span class="typing-indicator">
+                <span></span><span></span><span></span>
+              </span>
+            }
+          </div>
+          <span class="message-time">{{ msg.timestamp | date:'HH:mm:ss' }}</span>
+        </div>
+      }
+    </div>
+
+    <!-- Input Bar -->
+    <div class="input-bar">
+      <textarea
+        #input
+        class="input-field"
+        [(ngModel)]="inputText"
+        (keydown)="onKeydown($event)"
+        [disabled]="!isConnected || sending"
+        placeholder="Type a message… (Enter to send, Shift+Enter for newline)"
+        rows="1"
+      ></textarea>
+      <button
+        class="send-btn"
+        (click)="send()"
+        [disabled]="!isConnected || sending || !inputText.trim()"
+      >
+        {{ sending ? '…' : 'Send' }}
+      </button>
+    </div>
+
+  </main>
+</div>
