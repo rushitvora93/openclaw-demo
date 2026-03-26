@@ -5,6 +5,7 @@ import {
   ViewChild,
   ElementRef,
   AfterViewChecked,
+  inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -33,10 +34,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   settings: OpenClawSettings;
 
+  private readonly openclaw = inject(OpenClawService);
   private subs = new Subscription();
   private shouldScrollBottom = false;
 
-  constructor(private readonly openclaw: OpenClawService) {
+  constructor() {
     this.settings = this.openclaw.getSettings();
   }
 

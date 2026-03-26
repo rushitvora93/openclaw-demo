@@ -1,5 +1,5 @@
 import { Injectable, OnDestroy } from '@angular/core';
-import { BehaviorSubject, Subject, Observable, filter, map, timeout, firstValueFrom } from 'rxjs';
+import { BehaviorSubject, Subject, Observable, filter } from 'rxjs';
 import {
   ConnectionStatus,
   GatewayEvent,
@@ -430,7 +430,9 @@ export class OpenClawService implements OnDestroy {
     if (stored) {
       try {
         return JSON.parse(stored) as OpenClawSettings;
-      } catch {}
+      } catch {
+        // ignore malformed JSON in localStorage
+      }
     }
     return {
       gatewayUrl: environment.openclawGatewayUrl,

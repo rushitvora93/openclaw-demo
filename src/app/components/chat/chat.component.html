@@ -55,7 +55,13 @@
   <main class="main">
     <!-- Settings Panel -->
     @if (showSettings) {
-      <div class="settings-overlay" (click)="showSettings = false"></div>
+      <div
+        class="settings-overlay"
+        (click)="showSettings = false"
+        (keydown.escape)="showSettings = false"
+        tabindex="0"
+        role="button"
+      ></div>
       <div class="settings-panel">
         <h2 class="settings-title">Settings</h2>
 
