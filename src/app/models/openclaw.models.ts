@@ -11,17 +11,17 @@ export type ConnectionStatus =
 
 export interface GatewayRequest {
   type: 'req';
-  id: number;
+  id: string;
   method: string;
   params?: Record<string, unknown>;
 }
 
 export interface GatewayResponse {
   type: 'res';
-  id: number;
+  id: string;
   ok: boolean;
   payload?: unknown;
-  error?: string;
+  error?: { code: string; message: string; details?: unknown };
 }
 
 export interface GatewayEvent {
@@ -42,18 +42,27 @@ export interface ConnectChallengePayload {
 }
 
 export interface ConnectParams {
-  version: number;
-  role: 'operator' | 'node';
-  scopes: string[];
-  device: DeviceIdentity;
-  token?: string;
-  challenge?: string; // signed nonce
-}
-
-export interface DeviceIdentity {
-  id: string;
-  name: string;
-  platform?: string;
+  minProtocol: number;
+  maxProtocol: number;
+  client: {
+    id: 'webchat';
+    version: string;
+    platform: string;
+    mode: 'webchat';
+    displayName?: string;
+  };
+  role?: string;
+  scopes?: string[];
+  device?: {
+    id: string;
+    publicKey: string;   // base64url raw Ed25519 public key (32 bytes)
+    signature: string;   // base64url Ed25519 signature of payload
+    signedAt: number;    // timestamp ms
+    nonce: string;       // must match challenge nonce
+  };
+  auth?: {
+    token?: string;
+  };
 }
 
 export interface HelloOkPayload {
@@ -84,12 +93,13 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
-export interface AgentEventPayload {
-  delta?: string;       // streamed text chunk
-  content?: string;     // full content on completion
-  status?: 'accepted' | 'streaming' | 'ok' | 'error';
-  requestId?: string;
-  error?: string;
+export interface ChatEventPayload {
+  runId: string;
+  sessionKey: string;
+  seq: number;
+  state: 'delta' | 'final' | 'aborted' | 'error';
+  message?: { role: string; content: { type: string; text: string }[]; timestamp: number };
+  errorMessage?: string;
 }
 
 export interface SendMessageParams {

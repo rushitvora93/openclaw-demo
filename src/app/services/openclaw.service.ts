@@ -16,14 +16,16 @@ import {
   GatewayResponse,
   OpenClawSettings,
   ChatMessage,
-  AgentEventPayload,
+  ChatEventPayload,
   ConnectParams,
 } from '../models/openclaw.models';
 import { environment } from '../../environments/environment';
 
-const STORAGE_KEY_DEVICE_ID = 'openclaw_device_id';
+const STORAGE_KEY_KEYPAIR = 'openclaw_keypair';
 const STORAGE_KEY_SETTINGS = 'openclaw_settings';
-const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 3;
+// Ed25519 SPKI DER prefix — strip to get raw 32-byte public key
+const ED25519_SPKI_PREFIX_LEN = 12;
 
 @Injectable({ providedIn: 'root' })
 export class OpenClawService implements OnDestroy {
@@ -38,14 +40,14 @@ export class OpenClawService implements OnDestroy {
   private ws: WebSocket | null = null;
   private reqId = 1;
   private pendingRequests = new Map<
-    number,
+    string,
     { resolve: (v: GatewayResponse) => void; reject: (e: Error) => void }
   >();
   private events$ = new Subject<GatewayEvent>();
   private activeAgentMsgId: string | null = null;
+  private sessionKey: string | null = null;
 
   private settings: OpenClawSettings = this.loadSettings();
-  private deviceId: string = this.loadOrCreateDeviceId();
 
   // ─── Settings ─────────────────────────────────────────────────────────────
 
@@ -115,18 +117,19 @@ export class OpenClawService implements OnDestroy {
     this.activeAgentMsgId = agentMsg.id;
 
     try {
-      const res = await this.request('agent.run', {
+      const res = await this.request('chat.send', {
+        sessionKey: this.sessionKey ?? 'main',
         message: text,
-        stream: true,
+        idempotencyKey: crypto.randomUUID(),
       });
 
       if (!res.ok) {
         this.updateMessage(agentMsg.id, {
-          content: res.error ?? 'Request failed.',
+          content: res.error?.message ?? 'Request failed.',
           status: 'error',
         });
       }
-      // Streamed chunks arrive via agent events — see handleEvent()
+      // Streamed chunks arrive via chat events — see handleChatEvent()
     } catch (err) {
       this.updateMessage(agentMsg.id, {
         content: String(err),
@@ -172,6 +175,15 @@ export class OpenClawService implements OnDestroy {
   }
 
   private handleResponse(res: GatewayResponse): void {
+    // hello-ok arrives as res payload for the connect request (id "0")
+    if (res.id === '0' && res.ok && (res.payload as { type?: string })?.type === 'hello-ok') {
+      const helloOk = res.payload as { snapshot?: { sessionDefaults?: { mainSessionKey?: string } } };
+      this.sessionKey = helloOk.snapshot?.sessionDefaults?.mainSessionKey ?? null;
+      this.setStatus('connected');
+      this.addSystemMessage('Connected to OpenClaw Gateway.');
+      return;
+    }
+
     const pending = this.pendingRequests.get(res.id);
     if (pending) {
       this.pendingRequests.delete(res.id);
@@ -187,13 +199,8 @@ export class OpenClawService implements OnDestroy {
         await this.performHandshake(event.payload as { nonce: string; timestamp: number });
         break;
 
-      case 'hello-ok':
-        this.setStatus('connected');
-        this.addSystemMessage('Connected to OpenClaw Gateway.');
-        break;
-
-      case 'agent':
-        this.handleAgentEvent(event.payload as AgentEventPayload);
+      case 'chat':
+        this.handleChatEvent(event.payload as ChatEventPayload);
         break;
 
       case 'heartbeat':
@@ -207,64 +214,109 @@ export class OpenClawService implements OnDestroy {
     }
   }
 
-  /** Step 2 of handshake: respond to server's challenge */
+  /** Step 2 of handshake: sign challenge with Ed25519 device key and send connect */
   private async performHandshake(challenge: { nonce: string; timestamp: number }): Promise<void> {
-    const signature = await this.signNonce(challenge.nonce, this.settings.token);
+    const { deviceId, publicKeyBase64Url, privateKey } = await this.ensureKeyPair();
+
+    const signedAt = Date.now();
+    const scopes = ['operator.read', 'operator.write', 'operator.admin'];
+    const token = this.settings.token ?? '';
+
+    // Payload format defined by openclaw protocol v3:
+    // v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
+    const payload = [
+      'v3', deviceId, 'webchat', 'webchat', 'operator',
+      scopes.join(','), String(signedAt), token,
+      challenge.nonce, 'web', '',
+    ].join('|');
+
+    const sigBuffer = await crypto.subtle.sign(
+      { name: 'Ed25519' },
+      privateKey,
+      new TextEncoder().encode(payload)
+    );
 
     const params: ConnectParams = {
-      version: PROTOCOL_VERSION,
-      role: 'operator',
-      scopes: ['operator.read', 'operator.write'],
-      device: {
-        id: this.deviceId,
-        name: this.settings.deviceName || 'Angular Integration',
+      minProtocol: PROTOCOL_VERSION,
+      maxProtocol: PROTOCOL_VERSION,
+      client: {
+        id: 'webchat',
+        version: '1.0.0',
         platform: 'web',
+        mode: 'webchat',
+        displayName: this.settings.deviceName || 'Angular Integration',
       },
-      ...(this.settings.token ? { token: this.settings.token } : {}),
-      challenge: signature,
+      role: 'operator',
+      scopes,  // operator.read, operator.write, operator.admin
+      device: {
+        id: deviceId,
+        publicKey: publicKeyBase64Url,
+        signature: this.toBase64Url(new Uint8Array(sigBuffer)),
+        signedAt,
+        nonce: challenge.nonce,
+      },
+      ...(token ? { auth: { token } } : {}),
     };
 
-    this.send({ type: 'req', id: 0, method: 'connect', params: params as unknown as Record<string, unknown> });
+    this.send({ type: 'req', id: '0', method: 'connect', params: params as unknown as Record<string, unknown> });
   }
 
-  /** HMAC-SHA256 sign of nonce using token as key */
-  private async signNonce(nonce: string, key: string): Promise<string> {
-    if (!key) return nonce; // No token — pass nonce as-is for localhost auto-approval
-
-    const enc = new TextEncoder();
-    const cryptoKey = await crypto.subtle.importKey(
-      'raw',
-      enc.encode(key),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(nonce));
-    return Array.from(new Uint8Array(sig))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  /** Handle streamed agent response chunks */
-  private handleAgentEvent(payload: AgentEventPayload): void {
-    if (!this.activeAgentMsgId) return;
-
-    const { delta, content, status } = payload;
-
-    if (delta) {
-      // Append streaming chunk
-      const current = this.messages$.value.find(
-        (m) => m.id === this.activeAgentMsgId
-      );
-      this.updateMessage(this.activeAgentMsgId, {
-        content: (current?.content ?? '') + delta,
-      });
+  /** Load or generate a persistent Ed25519 keypair; derive device ID from public key */
+  private async ensureKeyPair(): Promise<{ deviceId: string; publicKeyBase64Url: string; privateKey: CryptoKey }> {
+    const stored = localStorage.getItem(STORAGE_KEY_KEYPAIR);
+    if (stored) {
+      try {
+        const { privateJwk, publicJwk } = JSON.parse(stored);
+        const privateKey = await crypto.subtle.importKey('jwk', privateJwk, { name: 'Ed25519' }, false, ['sign']);
+        const publicKey = await crypto.subtle.importKey('jwk', publicJwk, { name: 'Ed25519' }, true, ['verify']);
+        const { deviceId, publicKeyBase64Url } = await this.deriveDeviceInfo(publicKey);
+        return { deviceId, publicKeyBase64Url, privateKey };
+      } catch { /* fall through to regenerate */ }
     }
 
-    if (status === 'ok' || status === 'error') {
+    const keyPair = await crypto.subtle.generateKey({ name: 'Ed25519' } as AlgorithmIdentifier, true, ['sign', 'verify']) as CryptoKeyPair;
+    const [privateJwk, publicJwk] = await Promise.all([
+      crypto.subtle.exportKey('jwk', keyPair.privateKey),
+      crypto.subtle.exportKey('jwk', keyPair.publicKey),
+    ]);
+    localStorage.setItem(STORAGE_KEY_KEYPAIR, JSON.stringify({ privateJwk, publicJwk }));
+    const { deviceId, publicKeyBase64Url } = await this.deriveDeviceInfo(keyPair.publicKey);
+    return { deviceId, publicKeyBase64Url, privateKey: keyPair.privateKey };
+  }
+
+  private async deriveDeviceInfo(publicKey: CryptoKey): Promise<{ deviceId: string; publicKeyBase64Url: string }> {
+    const spki = await crypto.subtle.exportKey('spki', publicKey);
+    const rawKey = new Uint8Array(spki).slice(ED25519_SPKI_PREFIX_LEN);
+    const publicKeyBase64Url = this.toBase64Url(rawKey);
+    const hashBuf = await crypto.subtle.digest('SHA-256', rawKey);
+    const deviceId = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    return { deviceId, publicKeyBase64Url };
+  }
+
+  private toBase64Url(bytes: Uint8Array): string {
+    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  }
+
+  /** Handle streamed chat response events (state = delta | final | aborted | error) */
+  private handleChatEvent(payload: ChatEventPayload): void {
+    if (!this.activeAgentMsgId) return;
+
+    const { state, message, errorMessage } = payload;
+    const text = message?.content?.[0]?.text;
+
+    if (state === 'delta' && text !== undefined) {
+      // text is cumulative — set, don't append
+      this.updateMessage(this.activeAgentMsgId, { content: text });
+    } else if (state === 'final') {
       this.updateMessage(this.activeAgentMsgId, {
-        ...(content ? { content } : {}),
-        status: status === 'ok' ? 'done' : 'error',
+        ...(text !== undefined ? { content: text } : {}),
+        status: 'done',
+      });
+      this.activeAgentMsgId = null;
+    } else if (state === 'error' || state === 'aborted') {
+      this.updateMessage(this.activeAgentMsgId, {
+        content: errorMessage ?? (state === 'aborted' ? 'Aborted.' : 'Error.'),
+        status: 'error',
       });
       this.activeAgentMsgId = null;
     }
@@ -279,7 +331,7 @@ export class OpenClawService implements OnDestroy {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         return reject(new Error('WebSocket not open'));
       }
-      const id = this.reqId++;
+      const id = String(this.reqId++);
       this.pendingRequests.set(id, { resolve, reject });
       this.send({ type: 'req', id, method, params });
 
@@ -359,15 +411,6 @@ export class OpenClawService implements OnDestroy {
       token: '',
       deviceName: 'Angular Integration',
     };
-  }
-
-  private loadOrCreateDeviceId(): string {
-    let id = localStorage.getItem(STORAGE_KEY_DEVICE_ID);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(STORAGE_KEY_DEVICE_ID, id);
-    }
-    return id;
   }
 
   ngOnDestroy(): void {
