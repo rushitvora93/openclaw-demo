@@ -1,5 +1,4 @@
 <div class="shell">
-
   <!-- ── Sidebar ──────────────────────────────────────────────── -->
   <aside class="sidebar">
     <div class="brand">
@@ -29,9 +28,7 @@
 
       <button class="btn btn-ghost" (click)="clearChat()">Clear Chat</button>
 
-      <button class="btn btn-ghost" (click)="showSettings = !showSettings">
-        Settings
-      </button>
+      <button class="btn btn-ghost" (click)="showSettings = !showSettings">Settings</button>
     </div>
 
     <!-- Error -->
@@ -56,7 +53,6 @@
 
   <!-- ── Main ─────────────────────────────────────────────────── -->
   <main class="main">
-
     <!-- Settings Panel -->
     @if (showSettings) {
       <div class="settings-overlay" (click)="showSettings = false"></div>
@@ -70,8 +66,11 @@
 
         <label class="field">
           <span>Auth Token <em>(optional for localhost)</em></span>
-          <input [(ngModel)]="settings.token" type="password"
-                 placeholder="OPENCLAW_GATEWAY_TOKEN" />
+          <input
+            [(ngModel)]="settings.token"
+            type="password"
+            placeholder="OPENCLAW_GATEWAY_TOKEN"
+          />
         </label>
 
         <label class="field">
@@ -100,17 +99,18 @@
 
       @for (msg of messages; track trackById($index, msg)) {
         <div class="message" [class]="'message--' + msg.role">
-          <div class="bubble" [class.bubble--streaming]="msg.status === 'streaming'"
-                              [class.bubble--error]="msg.status === 'error'">
+          <div
+            class="bubble"
+            [class.bubble--streaming]="msg.status === 'streaming'"
+            [class.bubble--error]="msg.status === 'error'"
+          >
             @if (msg.content) {
               <p class="bubble-text">{{ msg.content }}</p>
             } @else if (msg.status === 'streaming') {
-              <span class="typing-indicator">
-                <span></span><span></span><span></span>
-              </span>
+              <span class="typing-indicator"> <span></span><span></span><span></span> </span>
             }
           </div>
-          <span class="message-time">{{ msg.timestamp | date:'HH:mm:ss' }}</span>
+          <span class="message-time">{{ msg.timestamp | date: 'HH:mm:ss' }}</span>
         </div>
       }
     </div>
@@ -134,6 +134,5 @@
         {{ sending ? '…' : 'Send' }}
       </button>
     </div>
-
   </main>
 </div>

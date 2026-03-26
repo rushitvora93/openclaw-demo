@@ -10,11 +10,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { OpenClawService } from '../../services/openclaw.service';
-import {
-  ChatMessage,
-  ConnectionStatus,
-  OpenClawSettings,
-} from '../../models/openclaw.models';
+import { ChatMessage, ConnectionStatus, OpenClawSettings } from '../../models/openclaw.models';
 
 @Component({
   selector: 'app-chat',
@@ -49,14 +45,10 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.openclaw.messages$.subscribe((msgs) => {
         this.messages = msgs;
         this.shouldScrollBottom = true;
-      })
+      }),
     );
-    this.subs.add(
-      this.openclaw.status$.subscribe((s) => (this.status = s))
-    );
-    this.subs.add(
-      this.openclaw.error$.subscribe((e) => (this.error = e))
-    );
+    this.subs.add(this.openclaw.status$.subscribe((s) => (this.status = s)));
+    this.subs.add(this.openclaw.error$.subscribe((e) => (this.error = e)));
   }
 
   ngAfterViewChecked(): void {

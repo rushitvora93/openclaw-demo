@@ -1,13 +1,5 @@
 import { Injectable, OnDestroy } from '@angular/core';
-import {
-  BehaviorSubject,
-  Subject,
-  Observable,
-  filter,
-  map,
-  timeout,
-  firstValueFrom,
-} from 'rxjs';
+import { BehaviorSubject, Subject, Observable, filter, map, timeout, firstValueFrom } from 'rxjs';
 import {
   ConnectionStatus,
   GatewayEvent,
@@ -92,9 +84,7 @@ export class OpenClawService implements OnDestroy {
         this.setStatus('disconnected');
       }
       this.ws = null;
-      this.pendingRequests.forEach((p) =>
-        p.reject(new Error('Connection closed'))
-      );
+      this.pendingRequests.forEach((p) => p.reject(new Error('Connection closed')));
       this.pendingRequests.clear();
     };
   }
@@ -177,7 +167,9 @@ export class OpenClawService implements OnDestroy {
   private handleResponse(res: GatewayResponse): void {
     // hello-ok arrives as res payload for the connect request (id "0")
     if (res.id === '0' && res.ok && (res.payload as { type?: string })?.type === 'hello-ok') {
-      const helloOk = res.payload as { snapshot?: { sessionDefaults?: { mainSessionKey?: string } } };
+      const helloOk = res.payload as {
+        snapshot?: { sessionDefaults?: { mainSessionKey?: string } };
+      };
       this.sessionKey = helloOk.snapshot?.sessionDefaults?.mainSessionKey ?? null;
       this.setStatus('connected');
       this.addSystemMessage('Connected to OpenClaw Gateway.');
@@ -225,15 +217,23 @@ export class OpenClawService implements OnDestroy {
     // Payload format defined by openclaw protocol v3:
     // v3|deviceId|clientId|clientMode|role|scopes|signedAtMs|token|nonce|platform|deviceFamily
     const payload = [
-      'v3', deviceId, 'webchat', 'webchat', 'operator',
-      scopes.join(','), String(signedAt), token,
-      challenge.nonce, 'web', '',
+      'v3',
+      deviceId,
+      'webchat',
+      'webchat',
+      'operator',
+      scopes.join(','),
+      String(signedAt),
+      token,
+      challenge.nonce,
+      'web',
+      '',
     ].join('|');
 
     const sigBuffer = await crypto.subtle.sign(
       { name: 'Ed25519' },
       privateKey,
-      new TextEncoder().encode(payload)
+      new TextEncoder().encode(payload),
     );
 
     const params: ConnectParams = {
@@ -247,7 +247,7 @@ export class OpenClawService implements OnDestroy {
         displayName: this.settings.deviceName || 'Angular Integration',
       },
       role: 'operator',
-      scopes,  // operator.read, operator.write, operator.admin
+      scopes, // operator.read, operator.write, operator.admin
       device: {
         id: deviceId,
         publicKey: publicKeyBase64Url,
@@ -258,23 +258,50 @@ export class OpenClawService implements OnDestroy {
       ...(token ? { auth: { token } } : {}),
     };
 
-    this.send({ type: 'req', id: '0', method: 'connect', params: params as unknown as Record<string, unknown> });
+    this.send({
+      type: 'req',
+      id: '0',
+      method: 'connect',
+      params: params as unknown as Record<string, unknown>,
+    });
   }
 
   /** Load or generate a persistent Ed25519 keypair; derive device ID from public key */
-  private async ensureKeyPair(): Promise<{ deviceId: string; publicKeyBase64Url: string; privateKey: CryptoKey }> {
+  private async ensureKeyPair(): Promise<{
+    deviceId: string;
+    publicKeyBase64Url: string;
+    privateKey: CryptoKey;
+  }> {
     const stored = localStorage.getItem(STORAGE_KEY_KEYPAIR);
     if (stored) {
       try {
         const { privateJwk, publicJwk } = JSON.parse(stored);
-        const privateKey = await crypto.subtle.importKey('jwk', privateJwk, { name: 'Ed25519' }, false, ['sign']);
-        const publicKey = await crypto.subtle.importKey('jwk', publicJwk, { name: 'Ed25519' }, true, ['verify']);
+        const privateKey = await crypto.subtle.importKey(
+          'jwk',
+          privateJwk,
+          { name: 'Ed25519' },
+          false,
+          ['sign'],
+        );
+        const publicKey = await crypto.subtle.importKey(
+          'jwk',
+          publicJwk,
+          { name: 'Ed25519' },
+          true,
+          ['verify'],
+        );
         const { deviceId, publicKeyBase64Url } = await this.deriveDeviceInfo(publicKey);
         return { deviceId, publicKeyBase64Url, privateKey };
-      } catch { /* fall through to regenerate */ }
+      } catch {
+        /* fall through to regenerate */
+      }
     }
 
-    const keyPair = await crypto.subtle.generateKey({ name: 'Ed25519' } as AlgorithmIdentifier, true, ['sign', 'verify']) as CryptoKeyPair;
+    const keyPair = (await crypto.subtle.generateKey(
+      { name: 'Ed25519' } as AlgorithmIdentifier,
+      true,
+      ['sign', 'verify'],
+    )) as CryptoKeyPair;
     const [privateJwk, publicJwk] = await Promise.all([
       crypto.subtle.exportKey('jwk', keyPair.privateKey),
       crypto.subtle.exportKey('jwk', keyPair.publicKey),
@@ -284,17 +311,24 @@ export class OpenClawService implements OnDestroy {
     return { deviceId, publicKeyBase64Url, privateKey: keyPair.privateKey };
   }
 
-  private async deriveDeviceInfo(publicKey: CryptoKey): Promise<{ deviceId: string; publicKeyBase64Url: string }> {
+  private async deriveDeviceInfo(
+    publicKey: CryptoKey,
+  ): Promise<{ deviceId: string; publicKeyBase64Url: string }> {
     const spki = await crypto.subtle.exportKey('spki', publicKey);
     const rawKey = new Uint8Array(spki).slice(ED25519_SPKI_PREFIX_LEN);
     const publicKeyBase64Url = this.toBase64Url(rawKey);
     const hashBuf = await crypto.subtle.digest('SHA-256', rawKey);
-    const deviceId = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const deviceId = Array.from(new Uint8Array(hashBuf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
     return { deviceId, publicKeyBase64Url };
   }
 
   private toBase64Url(bytes: Uint8Array): string {
-    return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    return btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
   }
 
   /** Handle streamed chat response events (state = delta | final | aborted | error) */
@@ -323,10 +357,7 @@ export class OpenClawService implements OnDestroy {
   }
 
   /** Generic RPC — returns a Promise resolved when the matching response arrives */
-  private request(
-    method: string,
-    params?: Record<string, unknown>
-  ): Promise<GatewayResponse> {
+  private request(method: string, params?: Record<string, unknown>): Promise<GatewayResponse> {
     return new Promise((resolve, reject) => {
       if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
         return reject(new Error('WebSocket not open'));
@@ -356,7 +387,7 @@ export class OpenClawService implements OnDestroy {
   private addMessage(
     role: ChatMessage['role'],
     content: string,
-    status: ChatMessage['status']
+    status: ChatMessage['status'],
   ): ChatMessage {
     const msg: ChatMessage = {
       id: crypto.randomUUID(),
@@ -373,13 +404,8 @@ export class OpenClawService implements OnDestroy {
     this.addMessage('system', content, 'done');
   }
 
-  private updateMessage(
-    id: string,
-    patch: Partial<Pick<ChatMessage, 'content' | 'status'>>
-  ): void {
-    this.messages$.next(
-      this.messages$.value.map((m) => (m.id === id ? { ...m, ...patch } : m))
-    );
+  private updateMessage(id: string, patch: Partial<Pick<ChatMessage, 'content' | 'status'>>): void {
+    this.messages$.next(this.messages$.value.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   }
 
   clearMessages(): void {

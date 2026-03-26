@@ -55,10 +55,10 @@ export interface ConnectParams {
   scopes?: string[];
   device?: {
     id: string;
-    publicKey: string;   // base64url raw Ed25519 public key (32 bytes)
-    signature: string;   // base64url Ed25519 signature of payload
-    signedAt: number;    // timestamp ms
-    nonce: string;       // must match challenge nonce
+    publicKey: string; // base64url raw Ed25519 public key (32 bytes)
+    signature: string; // base64url Ed25519 signature of payload
+    signedAt: number; // timestamp ms
+    nonce: string; // must match challenge nonce
   };
   auth?: {
     token?: string;
